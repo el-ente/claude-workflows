@@ -1,0 +1,30 @@
+# Copy into each project repo as .github/workflows/claude-review.yml
+# Replace YOUR_USER/claude-workflows with your central repo, and adjust the inputs.
+name: Claude review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: PR number to review
+        required: true
+
+jobs:
+  review:
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      actions: read
+    uses: YOUR_USER/claude-workflows/.github/workflows/claude-review.yml@main
+    secrets: inherit
+    with:
+      pr_number: ${{ github.event.inputs.pr_number || '' }}
+      node_version: "20"
+      install_command: "npm ci"
+      test_command: "npm test"
+      start_command: "npm run dev"
+      app_url: "http://localhost:3000"
+      # model: "claude-sonnet-5-5"

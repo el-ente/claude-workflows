@@ -1,0 +1,128 @@
+# Reusable workflow: independent review of a PR against the linked issue's acceptance criteria.
+# Fresh session, read-only token: the reviewer can comment but cannot push.
+name: Claude PR review
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: PR to review (only needed for manual runs; PR events fill it in)
+        type: string
+        default: ""
+      node_version:
+        type: string
+        default: "20"
+      install_command:
+        type: string
+        default: "npm ci"
+      test_command:
+        description: Deterministic test command (pass/fail check, independent of the AI). Empty to skip.
+        type: string
+        default: "npm test"
+      start_command:
+        type: string
+        default: "npm run dev"
+      app_url:
+        type: string
+        default: "http://localhost:3000"
+      model:
+        description: Optional model for the reviewer (e.g. a different one than the implementer)
+        type: string
+        default: ""
+      extra_instructions:
+        description: Optional project-specific notes for the reviewer (avoid single quotes)
+        type: string
+        default: ""
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    # Skip draft PRs on automatic runs
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      actions: read
+    env:
+      PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: refs/pull/${{ env.PR_NUMBER }}/head
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install project dependencies
+        run: ${{ inputs.install_command }}
+
+      - name: Run deterministic tests
+        id: tests
+        if: inputs.test_command != ''
+        continue-on-error: true
+        run: ${{ inputs.test_command }}
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Claude review
+        uses: anthropics/claude-code-action@v1
+        env:
+          APP_URL: ${{ inputs.app_url }}
+          START_COMMAND: ${{ inputs.start_command }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome || 'skipped' }}
+        with:
+          # Read-only workflow token instead of the Claude app token: the reviewer cannot push,
+          # and its comments cannot trigger the implementer workflow (no loops).
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are an independent reviewer for pull request #${{ env.PR_NUMBER }} in ${{ github.repository }}.
+            You did not write this code. Do not trust the PR description; verify everything yourself.
+          claude_args: |
+            --max-turns 50
+            ${{ inputs.model != '' && format('--model {0}', inputs.model) || '' }}
+            --allowedTools Bash,Read,Write,Glob,Grep
+            --append-system-prompt 'Review process:
+            1. Read the PR with gh pr view and gh pr diff. Find the linked issue (Closes/Fixes #N in the PR body, or the branch name) and read it with gh issue view.
+            2. Extract the acceptance criteria from the issue (usually a section titled Acceptance criteria, often a checklist). If the issue has none, say so clearly and review against the issue description instead, listing the criteria you inferred.
+            3. For EACH criterion decide MET, NOT MET, or CANNOT VERIFY, with concrete evidence: a file and line, a test result, or a screenshot you took. Never mark MET without evidence.
+            4. The deterministic test step finished with outcome given in the TESTS_OUTCOME environment variable. Mention it in the review.
+            5. Start the app in the background with the command in START_COMMAND, wait for APP_URL, and take your own Playwright screenshots of the affected pages into review-screenshots/. Look at them. Do not reuse screenshots committed in the PR.
+            6. Also flag real problems outside the criteria (bugs, regressions, security issues, scope creep), briefly. Skip style nitpicks.
+            7. Post ONE comment on the PR with gh pr comment: a table of criteria with status and evidence, the test outcome, other findings, and a final verdict line: PASS only if every criterion is MET and nothing blocking was found, otherwise FAIL. Mention that your screenshots are in the workflow run artifacts.
+            8. Write the single word PASS or FAIL to the file review-verdict.txt.
+            Rules: never modify, commit or push code. Never write the text @claude anywhere.
+            ${{ inputs.extra_instructions }}'
+
+      - name: Upload reviewer screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-screenshots-pr-${{ env.PR_NUMBER }}
+          path: review-screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Fail check if tests or review failed
+        if: always()
+        run: |
+          verdict=$(tr -d '[:space:]' < review-verdict.txt 2>/dev/null || echo MISSING)
+          echo "Tests: ${{ steps.tests.outcome || 'skipped' }} | Review verdict: $verdict"
+          if [ "${{ steps.tests.outcome }}" = "failure" ] || [ "$verdict" != "PASS" ]; then
+            exit 1
+          fi

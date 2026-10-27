@@ -1,0 +1,31 @@
+# Copy this file into each project repo as .github/workflows/claude.yml
+# Replace YOUR_USER/claude-workflows with your central repo, and adjust the inputs.
+name: Claude
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  pull_request_review:
+    types: [submitted]
+  issues:
+    types: [opened, assigned]
+
+jobs:
+  claude:
+    # The caller must grant at least the permissions the shared workflow uses
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    uses: YOUR_USER/claude-workflows/.github/workflows/claude-pr.yml@main
+    secrets: inherit
+    with:
+      node_version: "20"
+      install_command: "npm ci"
+      start_command: "npm run dev"
+      app_url: "http://localhost:3000"
+      # extra_instructions: "Use pnpm. Screenshots at 1280x720 and 375x812."

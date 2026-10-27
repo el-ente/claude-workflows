@@ -1,0 +1,105 @@
+# Reusable workflow: @claude on an issue -> implement -> Playwright screenshots -> PR
+# Lives in your central repo. Project repos call it with a small caller workflow.
+name: Claude issue-to-PR
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: Node.js version for the project
+        type: string
+        default: "20"
+      install_command:
+        description: Command that installs the project's dependencies
+        type: string
+        default: "npm ci"
+      start_command:
+        description: Command that starts the app locally (Claude runs it in the background)
+        type: string
+        default: "npm run dev"
+      app_url:
+        description: URL where the app is reachable once started
+        type: string
+        default: "http://localhost:3000"
+      extra_instructions:
+        description: Optional project-specific instructions for Claude (avoid single quotes)
+        type: string
+        default: ""
+      max_turns:
+        description: Upper limit on Claude's agentic turns per run
+        type: string
+        default: "60"
+    secrets:
+      CLAUDE_CODE_OAUTH_TOKEN:
+        description: Token from `claude setup-token` (Pro/Max). Provide this OR the API key.
+        required: false
+      ANTHROPIC_API_KEY:
+        description: Anthropic API key. Provide this OR the OAuth token.
+        required: false
+
+jobs:
+  claude:
+    # Only run when someone mentions @claude
+    if: |
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      id-token: write
+      actions: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Install project dependencies
+        run: ${{ inputs.install_command }}
+
+      - name: Install Playwright + Chromium
+        run: |
+          npm install --no-save @playwright/test
+          npx playwright install --with-deps chromium
+
+      - name: Run Claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          APP_URL: ${{ inputs.app_url }}
+          START_COMMAND: ${{ inputs.start_command }}
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: |
+            --max-turns ${{ inputs.max_turns }}
+            --allowedTools Bash,Read,Write,Edit,Glob,Grep
+            --append-system-prompt 'You are working on a GitHub issue end to end. Follow this flow:
+            1. Read the issue and implement the change on the working branch. Keep the change focused.
+            2. Run the existing tests and linters if the project has them, and fix what you broke.
+            3. Start the app in the background with the command in the START_COMMAND environment variable and wait until the URL in APP_URL responds.
+            4. Write a small throwaway Playwright script (Chromium is already installed) that opens the pages affected by your change and saves full-page PNG screenshots to pr-screenshots/issue-NUMBER/ (use the real issue number). Use clear file names such as 01-home.png. Do not commit the throwaway script.
+            5. Look at each screenshot to confirm the change is visible and nothing looks broken. Fix and retake if needed.
+            6. Commit the code changes and the screenshots, and push the branch.
+            7. Open a pull request with gh pr create that links the issue (Closes #NUMBER), summarizes the change, explains how it was tested, and embeds every screenshot as a markdown image pointing to https://github.com/OWNER/REPO/blob/BRANCH/pr-screenshots/issue-NUMBER/FILE.png?raw=true (fill in the real values; GITHUB_REPOSITORY holds OWNER/REPO).
+            8. Reply on the issue with a link to the pull request.
+            If the issue is unclear or cannot be done, do not guess: ask a question on the issue and stop.
+            ${{ inputs.extra_instructions }}'
+
+      - name: Upload screenshots as a backup artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-screenshots
+          path: pr-screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
