@@ -1,0 +1,19 @@
+# Copy into each project repo as .github/workflows/release.yml
+# Also copy release-please-config.json and .release-please-manifest.json to the repo root.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: el-ente/claude-workflows/.github/workflows/release.yml@main
+    with:
+      # Optional: build something and attach it to each release
+      node_version: "20"
+      build_command: "npm ci && npm run build"
+      artifact_path: "dist"

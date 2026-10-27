@@ -43,8 +43,11 @@ jobs:
   review:
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    # Skip draft PRs on automatic runs
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    # On automatic runs, skip drafts and release PRs (changelog/version only, no acceptance criteria)
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.draft == false &&
+       !startsWith(github.event.pull_request.head.ref, 'release-please--'))
     permissions:
       contents: read
       pull-requests: write

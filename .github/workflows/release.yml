@@ -1,0 +1,81 @@
+# Reusable workflow: release PR + GitHub Release (release-please).
+# Every merge to main updates one open "release" PR (changelog + version bump).
+# Merging that release PR creates the tag and the GitHub Release, and optionally attaches a build.
+#
+# Each repo needs two small files at its root:
+#   release-please-config.json   -> release type (node, simple, ...) and options
+#   .release-please-manifest.json -> current version, e.g. {".": "0.1.0"}
+# Versions come from squash-merged PR titles: feat: -> minor, fix: -> patch, feat!: -> major.
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      node_version:
+        description: Node.js version for the build step (empty to skip Node setup)
+        type: string
+        default: ""
+      build_command:
+        description: Command that builds the release artifact (empty for notes-only releases)
+        type: string
+        default: ""
+      artifact_path:
+        description: File or folder to attach to the release (folders are zipped)
+        type: string
+        default: ""
+    outputs:
+      release_created:
+        description: "true when this run published a release"
+        value: ${{ jobs.release.outputs.release_created }}
+      tag_name:
+        description: Tag of the release created in this run
+        value: ${{ jobs.release.outputs.tag_name }}
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      release_created: ${{ steps.rp.outputs.release_created }}
+      tag_name: ${{ steps.rp.outputs.tag_name }}
+    steps:
+      - name: Update release PR or publish release
+        id: rp
+        uses: googleapis/release-please-action@v4
+
+      # The steps below only run when the release PR was just merged.
+      # (Releases made with the workflow token don't trigger other workflows,
+      # so the artifact is built here instead of in a separate "on release" workflow.)
+      - name: Checkout release tag
+        if: steps.rp.outputs.release_created == 'true' && inputs.build_command != ''
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.rp.outputs.tag_name }}
+
+      - name: Set up Node.js
+        if: steps.rp.outputs.release_created == 'true' && inputs.build_command != '' && inputs.node_version != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node_version }}
+
+      - name: Build
+        if: steps.rp.outputs.release_created == 'true' && inputs.build_command != ''
+        run: ${{ inputs.build_command }}
+
+      - name: Attach artifact to the release
+        if: steps.rp.outputs.release_created == 'true' && inputs.build_command != '' && inputs.artifact_path != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.rp.outputs.tag_name }}
+          ARTIFACT: ${{ inputs.artifact_path }}
+        run: |
+          if [ -d "$ARTIFACT" ]; then
+            name="${GITHUB_REPOSITORY#*/}-${TAG}.zip"
+            (cd "$ARTIFACT" && zip -qr "$GITHUB_WORKSPACE/$name" .)
+            file="$name"
+          else
+            file="$ARTIFACT"
+          fi
+          gh release upload "$TAG" "$file" --clobber

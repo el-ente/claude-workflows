@@ -15,7 +15,8 @@ Shared GitHub Actions workflow: mention `@claude` on an issue and Claude impleme
    - API key: `gh secret set ANTHROPIC_API_KEY --repo OWNER/REPO`
 3. Copy `templates/claude.yml` and `templates/claude-review.yml` to `.github/workflows/`, replace `YOUR_USER`, and set the inputs (install/test/start commands, app URL).
 4. Copy `templates/ISSUE_TEMPLATE/` to `.github/ISSUE_TEMPLATE/` so every issue has an *Acceptance criteria* section.
-5. Commit, open an issue from the template, and write `@claude` in it.
+5. For releases: copy `templates/release.yml` to `.github/workflows/`, and `templates/release-please-config.json` + `templates/.release-please-manifest.json` to the repo root (set `release-type` and the current version). In the repo settings, enable *Allow GitHub Actions to create and approve pull requests* and use **squash merging** with the PR title as the commit message.
+6. Commit, open an issue from the template, and write `@claude` in it.
 
 ## Review workflow
 
@@ -47,3 +48,11 @@ To set the secret on several repos at once, loop over their names with `gh secre
 - Screenshots are committed under `pr-screenshots/issue-N/` so they render in the PR; they are also uploaded as a workflow artifact for 14 days.
 - Runs on GitHub-hosted runners; private repos use your free Actions minutes.
 - Only people with write access should be able to trigger it; keep the project repos private or restrict who can comment.
+
+## Release workflow
+
+`release.yml` keeps one open release PR on each repo, updated after every merge to `main`, with the changelog and the next version. Merging the release PR creates the tag and the GitHub Release, and attaches the build if `build_command` and `artifact_path` are set.
+
+- Version bumps come from squash-merged PR titles: `feat:` → minor, `fix:` → patch, `feat!:` → major (while below 1.0.0, breaking changes bump minor). `chore:`/`docs:`/`test:` don't trigger a release.
+- Claude is instructed to title its PRs this way.
+- The reviewer skips release PRs automatically.

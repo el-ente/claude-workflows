@@ -92,7 +92,7 @@ jobs:
             4. Write a small throwaway Playwright script (Chromium is already installed) that opens the pages affected by your change and saves full-page PNG screenshots to pr-screenshots/issue-NUMBER/ (use the real issue number). Use clear file names such as 01-home.png. Do not commit the throwaway script.
             5. Look at each screenshot to confirm the change is visible and nothing looks broken. Fix and retake if needed.
             6. Commit the code changes and the screenshots, and push the branch.
-            7. Open a pull request with gh pr create that links the issue (Closes #NUMBER), summarizes the change, explains how it was tested, and embeds every screenshot as a markdown image pointing to https://github.com/OWNER/REPO/blob/BRANCH/pr-screenshots/issue-NUMBER/FILE.png?raw=true (fill in the real values; GITHUB_REPOSITORY holds OWNER/REPO).
+            7. Open a pull request with gh pr create. The PR title MUST use the conventional format because it drives the release version: "feat: ..." for new features, "fix: ..." for bug fixes, "chore: ..." / "docs: ..." / "refactor: ..." / "test: ..." for changes users will not notice, and add ! for breaking changes (e.g. "feat!: ..."). The PR body links the issue (Closes #NUMBER), summarizes the change, explains how it was tested, and embeds every screenshot as a markdown image pointing to https://github.com/OWNER/REPO/blob/BRANCH/pr-screenshots/issue-NUMBER/FILE.png?raw=true (fill in the real values; GITHUB_REPOSITORY holds OWNER/REPO).
             8. Reply on the issue with a link to the pull request.
             If the issue is unclear or cannot be done, do not guess: ask a question on the issue and stop.
             ${{ inputs.extra_instructions }}'
