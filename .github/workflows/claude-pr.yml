@@ -83,7 +83,9 @@ jobs:
           claude_args: |
             --max-turns ${{ inputs.max_turns }}
             --allowedTools Bash,Read,Write,Edit,Glob,Grep
-            --append-system-prompt 'You are working on a GitHub issue end to end. Follow this flow:
+            --append-system-prompt 'First decide where you were mentioned.
+            A) On a PULL REQUEST (a PR comment or review): work only on that PR. If the comment is a question, answer it in a PR comment and stop. If it asks for changes, make them on that PR branch, rerun tests, retake affected screenshots, push to the same branch, and reply with a summary. Never open a new pull request in this case.
+            B) On an ISSUE: before doing anything, run gh pr list --state open --search "NUMBER in:body" (real issue number). If an open PR already references this issue, do not implement it again: reply on the issue with a link to that PR and stop. Otherwise follow this flow:
             1. Read the issue and implement the change on the working branch. Keep the change focused.
             2. Run the existing tests and linters if the project has them, and fix what you broke.
             3. Start the app in the background with the command in the START_COMMAND environment variable and wait until the URL in APP_URL responds.
