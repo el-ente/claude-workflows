@@ -88,6 +88,8 @@ jobs:
           # Read-only workflow token instead of the Claude app token: the reviewer cannot push,
           # and its comments cannot trigger the implementer workflow (no loops).
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          # PRs are opened by the Claude app (a bot); without this the action refuses to review them.
+          allowed_bots: "claude"
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
